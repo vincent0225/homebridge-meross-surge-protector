@@ -1,6 +1,6 @@
 # Homebridge Meross MSS425E Surge Protector
 
-I have not tested this yet, but the original code was developed, tested and found to work by Robdel12, so it should be very close to working at least. Many thanks to Robdel12! This version of Robdel12's code, includes one minor change that expects an accessory's channel value to be included in the config.json. This allows (I hope) the device's three power outllets to be controlled individually. This code might work for single meross plugs also, just set the channel value to 0.
+I have not tested this yet, but the original code was developed, tested and found to work by Robdel12, so it should be very close to working at least. Many thanks to Robdel12! This version of Robdel12's code, includes one minor change that expects an accessory's channel value to be included in the config.json. This allows (I hope) the device's three power outlets to be controlled individually. This code might work for single meross plugs also, just set the channel value to 0.
 
 ## Setup
 
