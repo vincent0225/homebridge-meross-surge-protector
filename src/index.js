@@ -91,7 +91,7 @@ class MerossPlug {
           "payload": {
             "togglex": {
               "onoff": value ? 1 : 0,
-              "channel": 0
+              "channel": this.config.channel
             }
           },
           "header": {
