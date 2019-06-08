@@ -4,7 +4,7 @@
   "description": "Homebridge plugin for the meross MSS110 plug",
   "main": "src/index.js",
   "author": "Robert DeLuca",
-  "repository": "https://github.com/Robdel12/homebridge-meross-plug.git",
+  "repository": "https://github.com/vincent0225/homebridge-meross-surge-protector.git",
   "license": "MIT",
   "keywords": [
     "homebridge-plugin",
