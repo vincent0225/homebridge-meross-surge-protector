@@ -1,6 +1,7 @@
 "use strict";
 
 const http = require('http');
+const CONFIG = require('./config');
 
 let Service, Characteristic;
 
@@ -16,10 +17,10 @@ class MerossPlug {
     this.config = config;
     this.api = api;
 
-    this.name = config.name || 'Meross Device';
+    this.name = config.name || CONFIG.DEFAULT_NAME;
     this.deviceUrl = config.deviceUrl;
     this.authToken = config.authToken;
-    this.channel = (typeof config.channel === 'number') ? config.channel : 0;
+    this.channel = (typeof config.channel === 'number') ? config.channel : CONFIG.DEFAULT_CHANNEL;
 
     if (!this.deviceUrl) {
       this.log.error('MerossPlug: missing required "deviceUrl" in config');
@@ -31,8 +32,8 @@ class MerossPlug {
     this.service = new Service.Switch(this.name);
 
     this.informationService = new Service.AccessoryInformation()
-      .setCharacteristic(Characteristic.Manufacturer, 'Meross')
-      .setCharacteristic(Characteristic.Model, 'MSS110/MSS425')
+      .setCharacteristic(Characteristic.Manufacturer, CONFIG.MANUFACTURER)
+      .setCharacteristic(Characteristic.Model, CONFIG.MODEL)
       .setCharacteristic(Characteristic.SerialNumber, config.serialNumber || `channel-${this.channel}`);
 
     this.service.getCharacteristic(Characteristic.On)
@@ -55,7 +56,7 @@ class MerossPlug {
     // Legacy static sign value that has worked for many Meross local API implementations.
     // Real signing requires a per-device secret from the initial handshake.
     // If your device firmware rejects this, you may need to capture a fresh sign.
-    return '9cb8004faf1ea39e94256227c9fb0b19';
+    return CONFIG.SIGN;
   }
 
   async _doRequest(body) {
@@ -67,7 +68,7 @@ class MerossPlug {
     if (!/^https?:\/\//i.test(base)) {
       base = `http://${base}`;
     }
-    const url = new URL('/config', base);
+    const url = new URL(CONFIG.ENDPOINT, base);
     const postData = JSON.stringify(body);
 
     const options = {
@@ -75,9 +76,9 @@ class MerossPlug {
       headers: {
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(postData),
-        'AppVersion': '1.4.0',
+        'AppVersion': CONFIG.APP_VERSION,
         'Authorization': this.authToken || '',
-        'vendor': 'meross'
+        'vendor': CONFIG.VENDOR
       }
     };
 
@@ -112,11 +113,11 @@ class MerossPlug {
       header: {
         messageId: this._generateMessageId(),
         method: 'GET',
-        from: `${this.deviceUrl}/config`,
-        namespace: 'Appliance.Control.ToggleX',
+        from: `${this.deviceUrl}${CONFIG.ENDPOINT}`,
+        namespace: CONFIG.NAMESPACE,
         timestamp: timestamp,
         sign: this._generateSign(),
-        payloadVersion: 1
+        payloadVersion: CONFIG.PAYLOAD_VERSION
       }
     };
 
@@ -149,11 +150,11 @@ class MerossPlug {
       header: {
         messageId: this._generateMessageId(),
         method: 'SET',
-        from: `${this.deviceUrl}/config`,
-        namespace: 'Appliance.Control.ToggleX',
+        from: `${this.deviceUrl}${CONFIG.ENDPOINT}`,
+        namespace: CONFIG.NAMESPACE,
         timestamp: timestamp,
         sign: this._generateSign(),
-        payloadVersion: 1
+        payloadVersion: CONFIG.PAYLOAD_VERSION
       }
     };
 
