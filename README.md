@@ -94,10 +94,10 @@ The same `deviceUrl` + `authToken` can be reused for each channel on a multi-out
 
 ## Notes & Limitations
 
-- The plugin makes direct calls to the device's local API.
-- `get` state is not polled from the device (last known `set` value is used).
-- The underlying `request` dependency is deprecated; consider this plugin experimental/maintenance-only.
-- Requires Homebridge >= 0.4.0.
+- The plugin makes direct calls to the device's local API using Node's built-in `http` module (no external request libraries).
+- State is queried live from the device on each HomeKit GET (no background polling).
+- The legacy static `sign` value may need refreshing for newer device firmware (capture a real request if SET/GET fails).
+- Requires recent Homebridge (1.6+ / 2.0+) and Node 18+.
 
 ## Credits
 

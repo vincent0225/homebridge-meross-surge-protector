@@ -1,149 +1,183 @@
 "use strict";
 
-const request = require('request');
+const http = require('http');
 
 let Service, Characteristic;
 
-// Wrap request with a promise to make it awaitable
-function doRequest(options) {
-  return new Promise(function (resolve, reject) {
-    request(options, function (error, res, body) {
-      if (!error && res.statusCode == 200) {
-        resolve(body);
-      } else {
-        reject(error);
-      }
-    });
-  });
-}
-
-module.exports = function (homebridge) {
-  Service = homebridge.hap.Service;
-  Characteristic = homebridge.hap.Characteristic;
-  homebridge.registerAccessory("homebridge-meross-plug", "Meross", MerossPlug);
+module.exports = (api) => {
+  Service = api.hap.Service;
+  Characteristic = api.hap.Characteristic;
+  api.registerAccessory('homebridge-meross-plug', 'Meross', MerossPlug);
 };
 
 class MerossPlug {
-  constructor (log, config) {
-    /*
-     * The constructor function is called when the plugin is registered.
-     * log is a function that can be used to log output to the homebridge console
-     * config is an object that contains the config for this plugin that was defined the homebridge config.json
-     */
+  constructor(log, config, api) {
+    this.log = log;
+    this.config = config;
+    this.api = api;
 
-    /* assign both log and config to properties on 'this' class so we can use them in other methods */
-    this.log = log
-    this.config = config
+    this.name = config.name || 'Meross Device';
+    this.deviceUrl = config.deviceUrl;
+    this.authToken = config.authToken;
+    this.channel = (typeof config.channel === 'number') ? config.channel : 0;
 
-    /*
-     * A HomeKit accessory can have many "services". This will create our base service,
-     * Service types are defined in this code: https://github.com/KhaosT/HAP-NodeJS/blob/master/lib/gen/HomeKitTypes.js
-     * Search for "* Service" to tab through each available service type.
-     * Take note of the available "Required" and "Optional" Characteristics for the service you are creating
-     */
-    this.service = new Service.Switch(this.config.name)
-  }
+    if (!this.deviceUrl) {
+      this.log.error('MerossPlug: missing required "deviceUrl" in config');
+    }
+    if (!this.authToken) {
+      this.log.error('MerossPlug: missing required "authToken" in config');
+    }
 
-  getServices () {
-    /*
-     * The getServices function is called by Homebridge and should return an array of Services this accessory is exposing.
-     * It is also where we bootstrap the plugin to tell Homebridge which function to use for which action.
-     */
+    this.service = new Service.Switch(this.name);
 
-    /* Create a new information service. This just tells HomeKit about our accessory. */
-    const informationService = new Service.AccessoryInformation()
-          .setCharacteristic(Characteristic.Manufacturer, 'meross')
-          .setCharacteristic(Characteristic.Model, 'MSS110')
-          .setCharacteristic(Characteristic.SerialNumber, 'lol')
+    this.informationService = new Service.AccessoryInformation()
+      .setCharacteristic(Characteristic.Manufacturer, 'Meross')
+      .setCharacteristic(Characteristic.Model, 'MSS110/MSS425')
+      .setCharacteristic(Characteristic.SerialNumber, config.serialNumber || `channel-${this.channel}`);
 
-    /*
-     * For each of the service characteristics we need to register setters and getter functions
-     * 'get' is called when HomeKit wants to retrieve the current state of the characteristic
-     * 'set' is called when HomeKit wants to update the value of the characteristic
-     */
     this.service.getCharacteristic(Characteristic.On)
-      .on('get', this.getOnCharacteristicHandler.bind(this))
-      .on('set', this.setOnCharacteristicHandler.bind(this))
+      .onGet(this.getOn.bind(this))
+      .onSet(this.setOn.bind(this));
 
-    /* Return both the main service (this.service) and the informationService */
-    return [informationService, this.service]
+    this.isOn = false;
   }
 
-  async setOnCharacteristicHandler (value, callback) {
-    /* this is called when HomeKit wants to update the value of the characteristic as defined in our getServices() function */
+  getServices() {
+    return [this.informationService, this.service];
+  }
 
-    this.log(this.config, `${this.config.deviceUrl}/config`)
-    let response;
+  _generateMessageId() {
+    // 32-char hex id
+    return Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+  }
+
+  _generateSign() {
+    // Legacy static sign value that has worked for many Meross local API implementations.
+    // Real signing requires a per-device secret from the initial handshake.
+    // If your device firmware rejects this, you may need to capture a fresh sign.
+    return '9cb8004faf1ea39e94256227c9fb0b19';
+  }
+
+  async _doRequest(body) {
+    if (!this.deviceUrl) {
+      throw new Error('No deviceUrl configured');
+    }
+
+    let base = this.deviceUrl;
+    if (!/^https?:\/\//i.test(base)) {
+      base = `http://${base}`;
+    }
+    const url = new URL('/config', base);
+    const postData = JSON.stringify(body);
+
+    const options = {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData),
+        'AppVersion': '1.4.0',
+        'Authorization': this.authToken || '',
+        'vendor': 'meross'
+      }
+    };
+
+    return new Promise((resolve, reject) => {
+      const req = http.request(url, options, (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => {
+          if (res.statusCode === 200) {
+            try {
+              const json = JSON.parse(data);
+              resolve(json);
+            } catch (e) {
+              resolve(data);
+            }
+          } else {
+            reject(new Error(`HTTP ${res.statusCode} ${data}`));
+          }
+        });
+      });
+
+      req.on('error', (err) => reject(err));
+      req.write(postData);
+      req.end();
+    });
+  }
+
+  async _getStatus() {
+    const timestamp = Math.floor(Date.now() / 1000);
+    const body = {
+      payload: {},
+      header: {
+        messageId: this._generateMessageId(),
+        method: 'GET',
+        from: `${this.deviceUrl}/config`,
+        namespace: 'Appliance.Control.ToggleX',
+        timestamp: timestamp,
+        sign: this._generateSign(),
+        payloadVersion: 1
+      }
+    };
+
+    const response = await this._doRequest(body);
+    const togglex = response && response.payload && response.payload.togglex;
+
+    if (Array.isArray(togglex)) {
+      const ch = togglex.find((c) => c.channel === this.channel);
+      return ch ? !!ch.onoff : false;
+    }
+    if (togglex && typeof togglex.onoff !== 'undefined') {
+      // single or matching channel
+      if (typeof togglex.channel === 'undefined' || togglex.channel === this.channel) {
+        return !!togglex.onoff;
+      }
+    }
+    return this.isOn;
+  }
+
+  async setOn(value) {
+    const onoff = value ? 1 : 0;
+    const timestamp = Math.floor(Date.now() / 1000);
+    const body = {
+      payload: {
+        togglex: {
+          onoff: onoff,
+          channel: this.channel
+        }
+      },
+      header: {
+        messageId: this._generateMessageId(),
+        method: 'SET',
+        from: `${this.deviceUrl}/config`,
+        namespace: 'Appliance.Control.ToggleX',
+        timestamp: timestamp,
+        sign: this._generateSign(),
+        payloadVersion: 1
+      }
+    };
+
+    this.log.debug(`SET channel ${this.channel} -> ${onoff}`);
 
     try {
-      response = await doRequest({
-        method: 'POST',
-        url: `${this.config.deviceUrl}/config`,
-        headers: {
-          "Content-Type": "application/json",
-          "AppVersion": "1.4.0",
-          "Authorization": `${this.config.authToken}`,
-          "vendor":"meross"
-        },
-        json: true,
-        strictSSL: false,
-        body: {
-          "payload": {
-            "togglex": {
-              "onoff": value ? 1 : 0,
-              "channel": this.config.channel
-            }
-          },
-          "header": {
-            "messageId": "c3222c7d2b9163fe2968f06c45338a9f",
-            "method": "SET",
-            "from": `http:\/\/${this.config.deviceUrl}\/config`,
-            "namespace": "Appliance.Control.ToggleX",
-            "timestamp": 1543987687,
-            // TODO probably can recycle the 'sign' from the response of this request
-            // in case this gets stale and no longer works. No idea what it does.
-            "sign": "9cb8004faf1ea39e94256227c9fb0b19",
-            "payloadVersion": 1
-          }
-        }
-      });
-    } catch (e) {
-      this.log('Failed to POST to the Meross Plug:', e);
+      await this._doRequest(body);
+      this.isOn = value;
+      return value;
+    } catch (err) {
+      this.log.error(`Failed SET channel ${this.channel}: ${err.message}`);
+      throw err;
     }
-
-    if (response) {
-      this.isOn = value
-    } else {
-      this.isOn = false
-    }
-
-    /* Log to the console the value whenever this function is called */
-    this.log(`calling setOnCharacteristicHandler`, value)
-
-    /*
-     * The callback function should be called to return the value
-     * The first argument in the function should be null unless and error occured
-     */
-    callback(null)
   }
 
-  getOnCharacteristicHandler (callback) {
-    /*
-     * this is called when HomeKit wants to retrieve the current state of the characteristic as defined in our getServices() function
-     * it's called each time you open the Home app or when you open control center
-     */
-
-    // TODO: actually fetch the status instead of mutating a variable...
-    /* Log to the console the value whenever this function is called */
-    this.log(`calling getOnCharacteristicHandler`, this.isOn)
-
-    /*
-     * The callback function should be called to return the value
-     * The first argument in the function should be null unless and error occured
-     * The second argument in the function should be the current value of the characteristic
-     * This is just an example so we will return the value from `this.isOn` which is where we stored the value in the set handler
-     */
-    callback(null, this.isOn)
+  async getOn() {
+    try {
+      const current = await this._getStatus();
+      this.isOn = current;
+      this.log.debug(`GET channel ${this.channel} -> ${current}`);
+      return current;
+    } catch (err) {
+      this.log.warn(`GET status failed for channel ${this.channel}, using cached: ${err.message}`);
+      return this.isOn;
+    }
   }
-
 }

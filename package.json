@@ -1,20 +1,28 @@
 {
   "name": "homebridge-meross-plug",
-  "version": "0.1.1",
-  "description": "Homebridge plugin for the meross MSS110 plug",
+  "version": "0.2.0",
+  "description": "Homebridge plugin for Meross smart plugs and surge protectors (MSS110, MSS425E, etc.)",
   "main": "src/index.js",
   "author": "Robert DeLuca",
   "repository": "https://github.com/vincent0225/homebridge-meross-surge-protector.git",
+  "bugs": "https://github.com/vincent0225/homebridge-meross-surge-protector/issues",
+  "homepage": "https://github.com/vincent0225/homebridge-meross-surge-protector#readme",
   "license": "MIT",
   "keywords": [
     "homebridge-plugin",
     "meross",
-    "MSS110"
+    "MSS110",
+    "MSS425",
+    "surge protector",
+    "smart plug"
   ],
-  "dependencies": {
-    "request": "^2.88.0"
-  },
+  "dependencies": {},
   "engines": {
-    "homebridge": ">=0.4.0"
+    "node": "^18.20.4 || ^20.15.1 || ^22.0.0",
+    "homebridge": "^1.6.0 || ^2.0.0"
+  },
+  "scripts": {
+    "lint": "echo 'No linter configured'",
+    "test": "echo 'No tests configured'"
   }
 }
